@@ -88,7 +88,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
     {
       "type": 1,
       "content": {
-        "json": "# RAG API Monitoring\\nCustom OpenTelemetry metrics from Application Insights"
+        "json": "# RAG API Monitoring\nCustom OpenTelemetry metrics from Application Insights"
       },
       "name": "header"
     },
@@ -96,7 +96,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "customMetrics\\n| where name in ('rag_questions_total', 'rag_web_search_total', 'rag_llm_calls_total')\\n| summarize Total=sum(value) by name",
+        "query": "customMetrics\n| where name in ('rag_questions_total', 'rag_web_search_total', 'rag_llm_calls_total')\n| summarize Total=sum(value) by name",
         "size": 0,
         "timeContext": {
           "durationMs": 86400000
@@ -111,7 +111,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "customMetrics\\n| where name in ('rag_questions_total', 'rag_tokens_total', 'rag_token_cost_total')\\n| summarize Total=sum(value) by bin(timestamp, 1h), name\\n| render timechart",
+        "query": "customMetrics\n| where name in ('rag_questions_total', 'rag_tokens_total', 'rag_token_cost_total')\n| summarize Total=sum(value) by bin(timestamp, 1h), name\n| render timechart",
         "size": 0,
         "timeContext": {
           "durationMs": 86400000
@@ -126,7 +126,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "customMetrics\\n| where name in ('rag_response_latency_seconds', 'rag_tokens_per_question', 'rag_token_cost_per_question')\\n| summarize Average=avg(value), P95=percentile(value, 95) by name\\n| project name, Average, P95",
+        "query": "customMetrics\n| where name in ('rag_response_latency_seconds', 'rag_tokens_per_question', 'rag_token_cost_per_question')\n| summarize Average=avg(value), P95=percentile(value, 95) by name\n| project name, Average, P95",
         "size": 0,
         "timeContext": {
           "durationMs": 86400000
