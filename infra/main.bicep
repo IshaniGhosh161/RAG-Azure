@@ -79,7 +79,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
   properties: {
     displayName: '${environmentName} RAG API Monitoring'
     category: 'workbook'
-    sourceId: appInsights.id
+    sourceId: logAnalytics.id
     version: '1.0'
     serializedData: '''
 {
@@ -102,7 +102,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
           "durationMs": 86400000
         },
         "queryType": 0,
-        "resourceType": "microsoft.insights/components",
+        "resourceType": "microsoft.operationalinsights/workspaces",
         "visualization": "table"
       },
       "name": "totals"
@@ -117,7 +117,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
           "durationMs": 86400000
         },
         "queryType": 0,
-        "resourceType": "microsoft.insights/components",
+        "resourceType": "microsoft.operationalinsights/workspaces",
         "visualization": "timechart"
       },
       "name": "usage"
@@ -132,7 +132,7 @@ resource monitoringWorkbook 'Microsoft.Insights/workbooks@2022-04-01' = {
           "durationMs": 86400000
         },
         "queryType": 0,
-        "resourceType": "microsoft.insights/components",
+        "resourceType": "microsoft.operationalinsights/workspaces",
         "visualization": "table"
       },
       "name": "performance"
