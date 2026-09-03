@@ -36,31 +36,31 @@ Set your MongoDB Atlas connection string as `MONGO_URI` in `.env`, along with `O
 
 For Azure Container Apps deployment with Azure Container Registry, Log Analytics, and Application Insights, see [infra/README.md](infra/README.md).
 
-To run the published Docker Hub image locally, replace `YOUR_DOCKERHUB_USERNAME` with your Docker Hub username:
-
-```powershell
-docker pull YOUR_DOCKERHUB_USERNAME/chatbot-rag:latest
-$env:DOCKERHUB_IMAGE = "YOUR_DOCKERHUB_USERNAME/chatbot-rag"
-docker compose --env-file path to .env\.env -f path to docker compose\docker-compose.yml up --no-build -d
-OR
-docker compose up -d
-```
-
-The image is published by GitHub Actions after a successful push to `main` or `master`. Configure the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; create the `chatbot-rag` repository on Docker Hub first. The existing CI secrets are still required for the Compose health checks.
-
 #### Run the test suite
 .venv\Scripts\python.exe -m pytest tests -q
 
-GitHub Actions runs Python compilation, the test suite, and a Docker image build for pushes and pull requests to `main` or `master`.
-The workflow also runs the image and checks `/api/health`. Add these repository secrets for that container check: `MONGO_URI`, `OLLAMA_HOST` (optional), `OLLAMA_API_KEY`, and `TAVILY_API_KEY`.
+GitHub Actions validates Python compilation, tests, Bicep, and the Docker image for pull requests to `main` or `master`. A push to `main` or `master` also deploys to Azure Container Apps. The deploy job builds the image on the GitHub runner and pushes it directly to Azure Container Registry; it does not use Docker Hub or ACR Tasks.
 
-For Github Action have to fulfil **Azure OIDC prerequisite**
+Add these secrets to the GitHub `production` environment used by the workflow:
+
+```text
+AZURE_CLIENT_ID
+AZURE_TENANT_ID
+AZURE_SUBSCRIPTION_ID
+MONGO_URI
+OLLAMA_API_KEY
+TAVILY_API_KEY
+```
+
+`TAVILY_API_KEY` may be empty when web search is not used. `APPLICATIONINSIGHTS_CONNECTION_STRING` is not a GitHub secret: Bicep creates Application Insights and passes its generated connection string to Container Apps.
+
+For GitHub Actions, fulfil the **Azure OIDC prerequisite**
 
 The Azure app registration/service principal represented by AZURE_CLIENT_ID must have:
 
-A federated credential for this GitHub repository and the `main/master` branch.
-Contributor permission on the subscription or at least the `rag-rg` resource group.
-Permission to create role assignments, because Bicep assigns `AcrPull` to the Container App identity.
+A federated credential for the GitHub `production` environment.
+`Contributor` permission on the `rag-rg` resource group.
+`User Access Administrator` permission on `rag-rg`, because Bicep assigns `AcrPull` to the Container App identity.
 
 Getting **AZURE_CLIENT_ID**
 
@@ -82,7 +82,7 @@ $tenantId
 $subscriptionId
 ```
 Then create a service principal:
-```powersheel
+```powershell
 az ad sp create --id $clientId
 ```
 
@@ -91,10 +91,20 @@ Assign it permission to deploy:
 az role assignment create `
   --assignee $clientId `
   --role Contributor `
-  --scope "/subscriptions/$subscriptionId"
+  --scope "/subscriptions/$subscriptionId/resourceGroups/rag-rg"
 ```
 
-You must also create a federated credential for the GitHub repository:
+Assign permission to create the ACR pull role assignment:
+
+```powershell
+az role assignment create `
+  --assignee-object-id $objectId `
+  --assignee-principal-type ServicePrincipal `
+  --role "User Access Administrator" `
+  --scope "/subscriptions/$subscriptionId/resourceGroups/rag-rg"
+```
+
+The workflow uses `environment: production`, so create this federated credential. The repository and owner IDs below must match the subject shown in the GitHub Actions `azure/login` log:
 ```powershell
 $objectId = az ad app show `
   --id $clientId `
@@ -116,3 +126,5 @@ az ad app federated-credential create `
 
 Remove-Item .\github-production.json
 ```
+
+Do not create a separate branch credential for the current workflow. It is using the `production` environment subject. After adding the credential and GitHub environment secrets, push to `main` or rerun the failed workflow.

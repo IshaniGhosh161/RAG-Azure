@@ -225,7 +225,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (deployConta
                 port: 5000
                 scheme: 'HTTP'
               }
-              initialDelaySeconds: 120
+              initialDelaySeconds: 60
               periodSeconds: 30
               timeoutSeconds: 10
               failureThreshold: 5
