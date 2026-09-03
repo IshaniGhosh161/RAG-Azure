@@ -36,9 +36,9 @@ def record_llm_usage(prompt: str | None, response_text: str | None = None) -> No
         return
 
     total_cost = (total_tokens / 1000) * TOKEN_COST_PER_1K_TOKENS
-    RAG_TOKENS_TOTAL.inc(total_tokens)
-    RAG_TOKEN_COST_TOTAL.inc(total_cost)
-    RAG_LLM_CALLS_TOTAL.inc()
+    RAG_TOKENS_TOTAL.add(total_tokens)
+    RAG_TOKEN_COST_TOTAL.add(total_cost)
+    RAG_LLM_CALLS_TOTAL.add(1)
 
 
 def record_rag_metrics(question: str, response: str, latency_seconds: float) -> None:
@@ -47,10 +47,10 @@ def record_rag_metrics(question: str, response: str, latency_seconds: float) -> 
 
     total_tokens = estimate_tokens(question) + estimate_tokens(response)
     per_question_cost = (total_tokens / 1000) * TOKEN_COST_PER_1K_TOKENS
-    RAG_QUESTIONS_TOTAL.inc()
-    RAG_RESPONSE_LATENCY_SECONDS.observe(latency_seconds)
-    RAG_TOKENS_PER_QUESTION.observe(total_tokens)
-    RAG_TOKEN_COST_PER_QUESTION.observe(per_question_cost)
+    RAG_QUESTIONS_TOTAL.add(1)
+    RAG_RESPONSE_LATENCY_SECONDS.record(latency_seconds)
+    RAG_TOKENS_PER_QUESTION.record(total_tokens)
+    RAG_TOKEN_COST_PER_QUESTION.record(per_question_cost)
 
 
 def configure_observability(app: FastAPI) -> None:

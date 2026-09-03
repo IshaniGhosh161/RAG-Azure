@@ -373,7 +373,7 @@ Do not return plain text.
 
     def _web_search(self, state: GraphState):
         question = state["question"]
-        RAG_WEB_SEARCH_TOTAL.inc()
+        RAG_WEB_SEARCH_TOTAL.add(1)
         docs = self.web_search_tool.invoke({"query": question})
 
         web_content = "\n".join([d.get("content", "") for d in docs]) if isinstance(docs, list) else str(docs)
