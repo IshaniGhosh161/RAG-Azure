@@ -84,7 +84,10 @@ jobs:
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --template-file infra/main.bicep \
               --parameters infra/main.bicepparam \
-              deployContainerApp=false
+                mongoUri="$MONGO_URI" \
+                ollamaApiKey="$OLLAMA_API_KEY" \
+                tavilyApiKey="$TAVILY_API_KEY" \
+                deployContainerApp=false
 
             registry=$(az deployment group show --resource-group "$AZURE_RESOURCE_GROUP" --name rag-bootstrap-${{ github.run_id }} --query properties.outputs.registryName.value --output tsv)
             registry_server=$(az acr show --name "$registry" --resource-group "$AZURE_RESOURCE_GROUP" --query loginServer --output tsv)
@@ -113,6 +116,9 @@ jobs:
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --template-file infra/main.bicep \
             --parameters infra/main.bicepparam \
+              mongoUri="$MONGO_URI" \
+              ollamaApiKey="$OLLAMA_API_KEY" \
+              tavilyApiKey="$TAVILY_API_KEY" \
               imageTag="$IMAGE_TAG" \
               deployContainerApp=true
 

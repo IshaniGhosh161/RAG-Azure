@@ -44,6 +44,7 @@ var logAnalyticsName = '${environmentName}-${suffix}-logs'
 var appInsightsName = '${environmentName}-${suffix}-appi'
 var managedEnvironmentName = '${environmentName}-${suffix}-aca-env'
 var containerAppName = '${environmentName}-${suffix}-api'
+var containerAppIdentityName = '${environmentName}-${suffix}-api-id'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: logAnalyticsName
@@ -83,6 +84,21 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
+resource containerAppIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (deployContainerApp) {
+  name: containerAppIdentityName
+  location: location
+}
+
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployContainerApp) {
+  scope: registry
+  name: guid(registry.id, containerAppIdentity!.id, 'acrpull')
+  properties: {
+    principalId: containerAppIdentity!.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  }
+}
+
 resource managedEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: managedEnvironmentName
   location: location
@@ -101,8 +117,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (deployConta
   name: containerAppName
   location: location
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${containerAppIdentity.id}': {}
+    }
   }
+  dependsOn: [acrPullRole]
   properties: {
     managedEnvironmentId: managedEnvironment.id
     configuration: {
@@ -116,7 +136,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (deployConta
       registries: [
         {
           server: registry.properties.loginServer
-          identity: 'system'
+          identity: containerAppIdentity.id
         }
       ]
       secrets: [
@@ -260,16 +280,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = if (deployConta
         ]
       }
     }
-  }
-}
-
-resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployContainerApp) {
-  scope: registry
-  name: guid(registry.id, containerApp.id, 'acrpull')
-  properties: {
-    principalId: containerApp!.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
   }
 }
 
