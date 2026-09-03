@@ -1,0 +1,115 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: rag-api
+  IMAGE_TAG: ${{ github.sha }}
+  AZURE_RESOURCE_GROUP: rag-rg
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt -r requirements-dev.txt
+
+      - name: Compile Python files
+        run: python -m compileall -q backend scripts indexing
+
+      - name: Run tests
+        run: python -m pytest tests -q
+
+      - name: Validate Bicep
+        uses: azure/cli@v2
+        with:
+          inlineScript: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+      - name: Build Docker image
+        run: docker build --tag rag-api:test .
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Container Apps CLI extension
+        run: az extension add --name containerapp --upgrade
+
+      - name: Bootstrap Azure resources
+        id: bootstrap
+        uses: azure/cli@v2
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+        with:
+          inlineScript: |
+            az group create --name "$AZURE_RESOURCE_GROUP" --location eastus
+            az deployment group create \
+              --name rag-bootstrap-${{ github.run_id }} \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --template-file infra/main.bicep \
+              --parameters infra/main.bicepparam \
+              deployContainerApp=false
+
+            registry=$(az deployment group show --resource-group "$AZURE_RESOURCE_GROUP" --name rag-bootstrap-${{ github.run_id }} --query properties.outputs.registryName.value --output tsv)
+            echo "registry=$registry" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image to ACR
+        run: az acr build --registry '${{ steps.bootstrap.outputs.registry }}' --image "$IMAGE_NAME:$IMAGE_TAG" .
+
+      - name: Deploy Container App
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+        run: |
+          az deployment group create \
+            --name rag-deploy-${{ github.run_id }} \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.bicepparam \
+              imageTag="$IMAGE_TAG" \
+              deployContainerApp=true
+
+      - name: Show deployed URL
+        run: |
+          az deployment group show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name rag-deploy-${{ github.run_id }} \
+            --query properties.outputs.containerAppUrl.value \
+            --output tsv

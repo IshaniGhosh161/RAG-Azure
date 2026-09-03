@@ -53,3 +53,62 @@ The image is published by GitHub Actions after a successful push to `main` or `m
 
 GitHub Actions runs Python compilation, the test suite, and a Docker image build for pushes and pull requests to `main` or `master`.
 The workflow also runs the image and checks `/api/health`. Add these repository secrets for that container check: `MONGO_URI`, `OLLAMA_HOST` (optional), `OLLAMA_API_KEY`, and `TAVILY_API_KEY`.
+
+For Github Action have to fulfil **Azure OIDC prerequisite**
+
+The Azure app registration/service principal represented by AZURE_CLIENT_ID must have:
+
+A federated credential for this GitHub repository and the `main/master` branch.
+Contributor permission on the subscription or at least the `rag-rg` resource group.
+Permission to create role assignments, because Bicep assigns `AcrPull` to the Container App identity.
+
+Getting **AZURE_CLIENT_ID**
+
+You need an Azure App Registration configured for GitHub OIDC.
+
+Run these commands locally after `az login`:
+```powershell
+$subscriptionId = az account show --query id --output tsv
+$tenantId = az account show --query tenantId --output tsv
+
+$app = az ad app create `
+  --display-name "rag-azure-github-actions"
+
+$clientId = $app | ConvertFrom-Json | Select-Object -ExpandProperty appId
+$objectId = $app | ConvertFrom-Json | Select-Object -ExpandProperty id
+
+$clientId
+$tenantId
+$subscriptionId
+```
+Then create a service principal:
+```powersheel
+az ad sp create --id $clientId
+```
+
+Assign it permission to deploy:
+```powershell
+az role assignment create `
+  --assignee $clientId `
+  --role Contributor `
+  --scope "/subscriptions/$subscriptionId"
+```
+
+You must also create a federated credential for the GitHub repository:
+```powershell
+$federatedCredential = @{
+  name      = "github-main"
+  issuer    = "https://token.actions.githubusercontent.com"
+  subject   = "repo:IshaniGhosh161/RAG-Azure:ref:refs/heads/main"
+  audiences = @("api://AzureADTokenExchange")
+} | ConvertTo-Json -Depth 3
+
+Set-Content `
+  -Path .\github-main-federated-credential.json `
+  -Value $federatedCredential `
+  -Encoding utf8
+
+az ad app federated-credential create `
+  --id $objectId `
+  --parameters '@github-main-federated-credential.json'
+```

@@ -23,7 +23,6 @@ def _get_int(name: str, default: int) -> int:
 
 
 API_BASE_URL = _get_setting("API_BASE_URL")
-GOOGLE_API_KEY = _get_setting("GOOGLE_API_KEY", "")
 MONGO_URI = _get_setting("MONGO_URI")
 TAVILY_API_KEY = _get_setting("TAVILY_API_KEY", "")
 OLLAMA_HOST = _get_setting("OLLAMA_HOST", "https://ollama.com")
