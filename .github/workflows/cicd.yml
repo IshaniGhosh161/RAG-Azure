@@ -87,10 +87,20 @@ jobs:
               deployContainerApp=false
 
             registry=$(az deployment group show --resource-group "$AZURE_RESOURCE_GROUP" --name rag-bootstrap-${{ github.run_id }} --query properties.outputs.registryName.value --output tsv)
+            registry_server=$(az acr show --name "$registry" --resource-group "$AZURE_RESOURCE_GROUP" --query loginServer --output tsv)
             echo "registry=$registry" >> "$GITHUB_OUTPUT"
+            echo "registry_server=$registry_server" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Azure Container Registry
+        run: az acr login --name '${{ steps.bootstrap.outputs.registry }}'
 
       - name: Build and push image to ACR
-        run: az acr build --registry '${{ steps.bootstrap.outputs.registry }}' --image "$IMAGE_NAME:$IMAGE_TAG" .
+        run: |
+          docker build \
+            --tag "${{ steps.bootstrap.outputs.registry_server }}/$IMAGE_NAME:$IMAGE_TAG" \
+            .
+          docker push \
+            "${{ steps.bootstrap.outputs.registry_server }}/$IMAGE_NAME:$IMAGE_TAG"
 
       - name: Deploy Container App
         env:
