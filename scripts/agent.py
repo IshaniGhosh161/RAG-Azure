@@ -80,6 +80,11 @@ class SentenceTransformerReranker:
             reverse=True
         )
 
+        logger.info(
+            "Reranker scores: %s",
+            [round(float(score), 4) for _, score in ranked_docs[:top_n]],
+        )
+
         return [doc for doc, score in ranked_docs[:top_n]]
     
 class Agent:
@@ -278,7 +283,7 @@ Rewritten Query:
             "history": history_text,
         })
         self._record_llm_call(prompt=prompt_text, response_text=str(better_question))
-        logger.info("Built query: %s", better_question)
+        logger.info("Built query session=%s: %s", session_id, better_question)
         return {
             "history": history, 
             "question": better_question, 
@@ -365,7 +370,12 @@ Do not return plain text.
         route_prompt_text = route_prompt.format(question=state["question"])
         source = question_router.invoke({"question": state["question"]})
         self._record_llm_call(prompt=route_prompt_text, response_text=str(source.datasource))
-        logger.info("Routing decision: %s", source.datasource)
+        logger.info(
+            "Routing decision session=%s source=%s fast_mode=%s",
+            state.get("session_id", ""),
+            source.datasource,
+            FAST_MODE,
+        )
         if source.datasource == "vectorstore" and not self.retriever:
             return "web-search"
             
@@ -377,7 +387,12 @@ Do not return plain text.
         docs = self.web_search_tool.invoke({"query": question})
 
         web_content = "\n".join([d.get("content", "") for d in docs]) if isinstance(docs, list) else str(docs)
-        logger.info("Web search returned %d characters", len(web_content))
+        logger.info(
+            "Web search completed session=%s results=%d characters=%d",
+            state.get("session_id", ""),
+            len(docs) if isinstance(docs, list) else 1,
+            len(web_content),
+        )
         web_documents = [Document(page_content=web_content)]
 
         return {
@@ -398,7 +413,11 @@ Do not return plain text.
         if not self.retriever:
             return {"documents": [], "question": question, "source": "vectorstore"}
         documents = self.retriever.invoke(question)
-        logger.info("Retrieved %d documents from vectorstore for question: %s", len(documents), question)
+        logger.info(
+            "Vector retrieval completed session=%s documents=%d",
+            state.get("session_id", ""),
+            len(documents),
+        )
         return {"documents": documents, "question": question, "source": "vectorstore","retry_count": state.get("retry_count",0)}
 
     def _rerank_documents(self, state: GraphState):
@@ -412,7 +431,11 @@ Do not return plain text.
                     documents=documents,
                     top_n=RERANK_TOP_N,
                 )
-                logger.info("Reranked %d documents", len(documents))
+                logger.info(
+                    "Reranking completed session=%s documents=%d",
+                    state.get("session_id", ""),
+                    len(documents),
+                )
             except Exception as e:
                 logger.exception("Rerank failed: %s", e)
 
@@ -460,7 +483,12 @@ No explanation.
             prompt_text = f"Retrieved document: {d.page_content}\nUser question: {question}"
             score = retrieval_grader.invoke({"question": question, "document": d.page_content})
             self._record_llm_call(prompt=prompt_text, response_text=str(score.binary_score))
-            logger.info("Relevance check: %s", score.binary_score)
+            logger.info(
+                "Document relevance session=%s document_index=%d score=%s",
+                state.get("session_id", ""),
+                len(filtered_docs),
+                score.binary_score,
+            )
             if score.binary_score.lower() == "yes":
                 filtered_docs.append(d)
 
@@ -471,10 +499,25 @@ No explanation.
 
         if not state.get("documents"):
             if retry_count >= 2:
+                logger.info(
+                    "Retrieval decision session=%s result=no_relevant_document retries=%d",
+                    state.get("session_id", ""),
+                    retry_count,
+                )
                 return "no relevant document"
 
+            logger.info(
+                "Retrieval decision session=%s result=transform retries=%d",
+                state.get("session_id", ""),
+                retry_count,
+            )
             return "transform"
 
+        logger.info(
+            "Retrieval decision session=%s result=found_relevant_document documents=%d",
+            state.get("session_id", ""),
+            len(state["documents"]),
+        )
         return "found relevant document"
 
     def _generate(self, state: GraphState):
@@ -491,13 +534,32 @@ Answer contextually:"""
         formatted_prompt  = prompt_text.format(context=context_str, question=state["question"])
         generation = rag_chain.invoke({"context": context_str, "question": state["question"]})
         self._record_llm_call(prompt=formatted_prompt, response_text=str(generation))
-        logger.info("Generated answer with %d characters", len(generation))
+        logger.info(
+            "Answer generated session=%s source=%s documents=%d characters=%d fast_mode=%s",
+            state.get("session_id", ""),
+            state.get("source", ""),
+            len(state.get("documents", [])),
+            len(generation),
+            FAST_MODE,
+        )
         return {"documents": state["documents"], "question": state["question"], "generation": generation, "source": state.get("source", "")}
     
     def _after_generate(self, state: GraphState):
         if FAST_MODE or state.get("source") == "web-search":
+            logger.info(
+                "Answer grading skipped session=%s fast_mode=%s source=%s",
+                state.get("session_id", ""),
+                FAST_MODE,
+                state.get("source", ""),
+            )
             return "final"
 
+        logger.info(
+            "Answer grading started session=%s fast_mode=%s source=%s",
+            state.get("session_id", ""),
+            FAST_MODE,
+            state.get("source", ""),
+        )
         return "grade"
 
     def _grade_generation_node(self, state: GraphState):
@@ -560,14 +622,22 @@ or
             prompt=f"Facts: {documents}\nAnswer: {generation}",
             response_text=str(h_score.binary_score),
         )
-        logger.info("Hallucination check: %s", h_score.binary_score)
+        logger.info(
+            "Groundedness check session=%s score=%s",
+            state.get("session_id", ""),
+            h_score.binary_score,
+        )
         if h_score.binary_score.lower() == "yes":
             a_score = answer_grader.invoke({"question": question, "generation": generation})
             self._record_llm_call(
                 prompt=f"Question: {question}\nAnswer: {generation}",
                 response_text=str(a_score.binary_score),
             )
-            logger.info("Answer relevance check: %s", a_score.binary_score)
+            logger.info(
+                "Answer relevance check session=%s score=%s",
+                state.get("session_id", ""),
+                a_score.binary_score,
+            )
             if a_score.binary_score.lower() == "yes":
                 return "useful"
             return "not useful"
