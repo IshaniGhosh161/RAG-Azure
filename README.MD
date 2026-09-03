@@ -96,19 +96,23 @@ az role assignment create `
 
 You must also create a federated credential for the GitHub repository:
 ```powershell
-$federatedCredential = @{
-  name      = "github-main"
+$objectId = az ad app show `
+  --id $clientId `
+  --query id `
+  --output tsv
+
+$credential = @{
+  name      = "github-production-env"
   issuer    = "https://token.actions.githubusercontent.com"
-  subject   = "repo:IshaniGhosh161/RAG-Azure:ref:refs/heads/main"
+  subject   = "repo:IshaniGhosh161@168971196/RAG-Azure@1356082961:environment:production"
   audiences = @("api://AzureADTokenExchange")
 } | ConvertTo-Json -Depth 3
 
-Set-Content `
-  -Path .\github-main-federated-credential.json `
-  -Value $federatedCredential `
-  -Encoding utf8
+$credential | Set-Content .\github-production.json -Encoding utf8
 
 az ad app federated-credential create `
   --id $objectId `
-  --parameters '@github-main-federated-credential.json'
+  --parameters '@github-production.json'
+
+Remove-Item .\github-production.json
 ```
